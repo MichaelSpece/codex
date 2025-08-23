@@ -88,27 +88,43 @@ async function generateCommandExplanation(
     // Format the command for display
     const commandForDisplay = formatCommandForDisplay(command);
 
-    // Create a prompt that asks for an explanation with a more detailed system prompt
-    const response = await oai.chat.completions.create({
-      model,
-      ...(flexMode ? { service_tier: "flex" } : {}),
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are an expert in shell commands and terminal operations. Your task is to provide detailed, accurate explanations of shell commands that users are considering executing. Break down each part of the command, explain what it does, identify any potential risks or side effects, and explain why someone might want to run it. Be specific about what files or systems will be affected. If the command could potentially be harmful, make sure to clearly highlight those risks.",
-        },
-        {
-          role: "user",
-          content: `Please explain this shell command in detail: \`${commandForDisplay}\`\n\nProvide a structured explanation that includes:\n1. A brief overview of what the command does\n2. A breakdown of each part of the command (flags, arguments, etc.)\n3. What files, directories, or systems will be affected\n4. Any potential risks or side effects\n5. Why someone might want to run this command\n\nBe specific and technical - this explanation will help the user decide whether to approve or reject the command.`,
-        },
-      ],
-    });
+    // System prompt shared across API variants
+    const instructions =
+      "You are an expert in shell commands and terminal operations. Your task is to provide detailed, accurate explanations of shell commands that users are considering executing. Break down each part of the command, explain what it does, identify any potential risks or side effects, and explain why someone might want to run it. Be specific about what files or systems will be affected. If the command could potentially be harmful, make sure to clearly highlight those risks.";
 
-    // Extract the explanation from the response
-    const explanation =
-      response.choices[0]?.message.content || "Unable to generate explanation.";
-    return explanation;
+    // User prompt asking for the explanation
+    const userPrompt =
+      `Please explain this shell command in detail: \`${commandForDisplay}\`\n\nProvide a structured explanation that includes:\n1. A brief overview of what the command does\n2. A breakdown of each part of the command (flags, arguments, etc.)\n3. What files, directories, or systems will be affected\n4. Any potential risks or side effects\n5. Why someone might want to run this command\n\nBe specific and technical - this explanation will help the user decide whether to approve or reject the command.`;
+
+    let explanation: string | undefined;
+
+    if (!config.provider || config.provider.toLowerCase() === "openai") {
+      // Prefer the /v1/responses endpoint for OpenAI models
+      const res = await oai.responses.create({
+        model,
+        instructions,
+        input: [
+          {
+            role: "user",
+            content: [{ type: "input_text", text: userPrompt }],
+          },
+        ],
+        ...(flexMode ? { service_tier: "flex" } : {}),
+      });
+      explanation = res.output_text;
+    } else {
+      const chatResp = await oai.chat.completions.create({
+        model,
+        ...(flexMode ? { service_tier: "flex" } : {}),
+        messages: [
+          { role: "system", content: instructions },
+          { role: "user", content: userPrompt },
+        ],
+      });
+      explanation = chatResp.choices[0]?.message.content ?? undefined;
+    }
+
+    return explanation || "Unable to generate explanation.";
   } catch (error) {
     log(`Error generating command explanation: ${error}`);
 
