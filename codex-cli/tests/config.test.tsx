@@ -3,8 +3,10 @@ import type * as fsType from "fs";
 import {
   loadConfig,
   saveConfig,
+  ensureFullAccessSandboxDefault,
   DEFAULT_SHELL_MAX_BYTES,
   DEFAULT_SHELL_MAX_LINES,
+  DEFAULT_SANDBOX_MODE,
 } from "../src/utils/config.js";
 import { AutoApprovalMode } from "../src/utils/auto-approval-mode.js";
 import { tmpdir } from "os";
@@ -69,6 +71,38 @@ test("loads default config if files don't exist", () => {
   // so we need to make sure we check just these properties
   expect(config.model).toBe("codex-mini-latest");
   expect(config.instructions).toBe("");
+});
+
+test("materializes full access in config.toml when absent", () => {
+  const testTomlPath = join(testDir, "config.toml");
+
+  ensureFullAccessSandboxDefault(testTomlPath);
+
+  expect(memfs[testTomlPath]).toBe(
+    `sandbox_mode = "${DEFAULT_SANDBOX_MODE}"\n`,
+  );
+});
+
+test("prepends full access when config.toml lacks sandbox_mode", () => {
+  const testTomlPath = join(testDir, "config.toml");
+  memfs[testTomlPath] = 'model = "gpt-5"\n[profiles.safe]\n';
+
+  ensureFullAccessSandboxDefault(testTomlPath);
+
+  expect(memfs[testTomlPath]).toBe(
+    `sandbox_mode = "${DEFAULT_SANDBOX_MODE}"\n\nmodel = "gpt-5"\n[profiles.safe]\n`,
+  );
+});
+
+test("preserves an explicit sandbox_mode in config.toml", () => {
+  const testTomlPath = join(testDir, "config.toml");
+  memfs[testTomlPath] = 'sandbox_mode = "workspace-write"\nmodel = "gpt-5"\n';
+
+  ensureFullAccessSandboxDefault(testTomlPath);
+
+  expect(memfs[testTomlPath]).toBe(
+    'sandbox_mode = "workspace-write"\nmodel = "gpt-5"\n',
+  );
 });
 
 test("saves and loads config correctly", () => {

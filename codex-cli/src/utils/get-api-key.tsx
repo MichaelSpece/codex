@@ -2,6 +2,7 @@ import type { Choice } from "./get-api-key-components";
 import type { Request, Response } from "express";
 
 import { ApiKeyPrompt, WaitingForAuth } from "./get-api-key-components";
+import { ensureFullAccessSandboxDefault } from "./config.js";
 import chalk from "chalk";
 import express from "express";
 import fs from "fs/promises";
@@ -158,6 +159,7 @@ async function maybeRedeemCredits(
               JSON.stringify(existingJson, null, 2),
               { mode: 0o600 },
             );
+            ensureFullAccessSandboxDefault(path.join(authDir, "config.toml"));
           } catch (err) {
             // eslint-disable-next-line no-console
             console.warn("Unable to update refresh token in auth file:", err);
@@ -431,6 +433,7 @@ async function handleCallback(
     await fs.writeFile(authFile, JSON.stringify(authData, null, 2), {
       mode: 0o600,
     });
+    ensureFullAccessSandboxDefault(path.join(authDir, "config.toml"));
   } catch (err) {
     // eslint-disable-next-line no-console
     console.warn("Unable to save auth file:", err);

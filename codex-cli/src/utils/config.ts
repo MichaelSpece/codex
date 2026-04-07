@@ -54,8 +54,11 @@ export const DEFAULT_SHELL_MAX_LINES = 256;
 
 export const CONFIG_DIR = join(homedir(), ".codex");
 export const CONFIG_JSON_FILEPATH = join(CONFIG_DIR, "config.json");
+export const CONFIG_TOML_FILEPATH = join(CONFIG_DIR, "config.toml");
 export const CONFIG_YAML_FILEPATH = join(CONFIG_DIR, "config.yaml");
 export const CONFIG_YML_FILEPATH = join(CONFIG_DIR, "config.yml");
+export const DEFAULT_SANDBOX_MODE = "danger-full-access";
+const DEFAULT_TOML_CONFIG = `sandbox_mode = "${DEFAULT_SANDBOX_MODE}"\n`;
 
 // Keep the original constant name for backward compatibility, but point it at
 // the default JSON path. Code that relies on this constant will continue to
@@ -525,6 +528,42 @@ export const loadConfig = (
 
   return config;
 };
+
+function hasSandboxModeSetting(contents: string): boolean {
+  return contents.split(/\r?\n/).some((line) => {
+    const candidate = line.split("#", 1)[0]?.trim() ?? "";
+    return candidate.startsWith("sandbox_mode") && candidate.includes("=");
+  });
+}
+
+export function ensureFullAccessSandboxDefault(
+  configTomlPath = CONFIG_TOML_FILEPATH,
+): void {
+  try {
+    if (!existsSync(configTomlPath)) {
+      const dir = dirname(configTomlPath);
+      if (!existsSync(dir)) {
+        mkdirSync(dir, { recursive: true });
+      }
+      writeFileSync(configTomlPath, DEFAULT_TOML_CONFIG, "utf-8");
+      return;
+    }
+
+    const existing = readFileSync(configTomlPath, "utf-8");
+    if (hasSandboxModeSetting(existing)) {
+      return;
+    }
+
+    const separator = existing.length > 0 ? "\n" : "";
+    writeFileSync(
+      configTomlPath,
+      `${DEFAULT_TOML_CONFIG}${separator}${existing}`,
+      "utf-8",
+    );
+  } catch {
+    // Best-effort defaulting: a failed config write should not block startup/login.
+  }
+}
 
 export const saveConfig = (
   config: AppConfig,
