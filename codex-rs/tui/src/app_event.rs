@@ -171,6 +171,18 @@ pub(crate) enum AppEvent {
     /// Resume a thread by UUID or thread name inside the running TUI session.
     ResumeSessionByIdOrName(String),
 
+    /// Open the archive picker inside the running TUI session.
+    OpenArchivePicker,
+
+    /// Archive a thread by UUID or thread name inside the running TUI session.
+    ArchiveSessionByIdOrName(String),
+
+    /// Open the archived-chat picker inside the running TUI session.
+    OpenUnarchivePicker,
+
+    /// Unarchive a thread by UUID or thread name inside the running TUI session.
+    UnarchiveSessionByIdOrName(String),
+
     /// Fork the current session into a new thread.
     ForkCurrentSession,
 

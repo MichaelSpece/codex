@@ -1645,6 +1645,60 @@ async fn slash_resume_with_arg_requests_named_session() {
 }
 
 #[tokio::test]
+async fn slash_archive_opens_picker() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Archive);
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::OpenArchivePicker));
+}
+
+#[tokio::test]
+async fn slash_archive_with_arg_requests_named_session() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.bottom_pane.set_composer_text(
+        "/archive my-saved-thread".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::ArchiveSessionByIdOrName(id_or_name)) if id_or_name == "my-saved-thread"
+    );
+    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
+async fn slash_unarchive_opens_picker() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.dispatch_command(SlashCommand::Unarchive);
+
+    assert_matches!(rx.try_recv(), Ok(AppEvent::OpenUnarchivePicker));
+}
+
+#[tokio::test]
+async fn slash_unarchive_with_arg_requests_named_session() {
+    let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+
+    chat.bottom_pane.set_composer_text(
+        "/unarchive my-saved-thread".to_string(),
+        Vec::new(),
+        Vec::new(),
+    );
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+
+    assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::UnarchiveSessionByIdOrName(id_or_name)) if id_or_name == "my-saved-thread"
+    );
+    assert_matches!(op_rx.try_recv(), Err(TryRecvError::Empty));
+}
+
+#[tokio::test]
 async fn slash_fork_requests_current_fork() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
 

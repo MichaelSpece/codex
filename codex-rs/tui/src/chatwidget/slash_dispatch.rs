@@ -144,6 +144,12 @@ impl ChatWidget {
             SlashCommand::Resume => {
                 self.app_event_tx.send(AppEvent::OpenResumePicker);
             }
+            SlashCommand::Archive => {
+                self.app_event_tx.send(AppEvent::OpenArchivePicker);
+            }
+            SlashCommand::Unarchive => {
+                self.app_event_tx.send(AppEvent::OpenUnarchivePicker);
+            }
             SlashCommand::Fork => {
                 self.app_event_tx.send(AppEvent::ForkCurrentSession);
             }
@@ -722,6 +728,14 @@ impl ChatWidget {
                 self.app_event_tx
                     .send(AppEvent::ResumeSessionByIdOrName(args));
             }
+            SlashCommand::Archive if !trimmed.is_empty() => {
+                self.app_event_tx
+                    .send(AppEvent::ArchiveSessionByIdOrName(args));
+            }
+            SlashCommand::Unarchive if !trimmed.is_empty() => {
+                self.app_event_tx
+                    .send(AppEvent::UnarchiveSessionByIdOrName(args));
+            }
             SlashCommand::SandboxReadRoot if !trimmed.is_empty() => {
                 self.app_event_tx
                     .send(AppEvent::BeginWindowsSandboxGrantReadRoot { path: args });
@@ -861,6 +875,8 @@ impl ChatWidget {
             | SlashCommand::New
             | SlashCommand::Clear
             | SlashCommand::Resume
+            | SlashCommand::Archive
+            | SlashCommand::Unarchive
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
