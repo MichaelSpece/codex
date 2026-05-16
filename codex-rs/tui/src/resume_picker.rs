@@ -61,6 +61,8 @@ pub enum SessionSelection {
     StartFresh,
     Resume(SessionTarget),
     Fork(SessionTarget),
+    Archive(SessionTarget),
+    Unarchive(SessionTarget),
     Exit,
 }
 
@@ -68,6 +70,8 @@ pub enum SessionSelection {
 pub enum SessionPickerAction {
     Resume,
     Fork,
+    Archive,
+    Unarchive,
 }
 
 impl SessionPickerAction {
@@ -75,6 +79,8 @@ impl SessionPickerAction {
         match self {
             SessionPickerAction::Resume => "Resume a previous session",
             SessionPickerAction::Fork => "Fork a previous session",
+            SessionPickerAction::Archive => "Archive a saved chat",
+            SessionPickerAction::Unarchive => "Unarchive a saved chat",
         }
     }
 
@@ -82,7 +88,13 @@ impl SessionPickerAction {
         match self {
             SessionPickerAction::Resume => "resume",
             SessionPickerAction::Fork => "fork",
+            SessionPickerAction::Archive => "archive",
+            SessionPickerAction::Unarchive => "unarchive",
         }
+    }
+
+    fn archived_filter(self) -> bool {
+        matches!(self, SessionPickerAction::Unarchive)
     }
 
     fn selection(self, path: Option<PathBuf>, thread_id: ThreadId) -> SessionSelection {
@@ -90,6 +102,8 @@ impl SessionPickerAction {
         match self {
             SessionPickerAction::Resume => SessionSelection::Resume(target_session),
             SessionPickerAction::Fork => SessionSelection::Fork(target_session),
+            SessionPickerAction::Archive => SessionSelection::Archive(target_session),
+            SessionPickerAction::Unarchive => SessionSelection::Unarchive(target_session),
         }
     }
 }
@@ -167,7 +181,13 @@ pub async fn run_resume_picker_with_app_server(
         show_all,
         SessionPickerAction::Resume,
         is_remote,
-        spawn_app_server_page_loader(app_server, cwd_filter, include_non_interactive, bg_tx),
+        spawn_app_server_page_loader(
+            app_server,
+            cwd_filter,
+            include_non_interactive,
+            SessionPickerAction::Resume.archived_filter(),
+            bg_tx,
+        ),
         bg_rx,
     )
     .await
@@ -194,7 +214,75 @@ pub async fn run_fork_picker_with_app_server(
         SessionPickerAction::Fork,
         is_remote,
         spawn_app_server_page_loader(
-            app_server, cwd_filter, /*include_non_interactive*/ false, bg_tx,
+            app_server,
+            cwd_filter,
+            /*include_non_interactive*/ false,
+            SessionPickerAction::Fork.archived_filter(),
+            bg_tx,
+        ),
+        bg_rx,
+    )
+    .await
+}
+
+pub async fn run_archive_picker_with_app_server(
+    tui: &mut Tui,
+    config: &Config,
+    show_all: bool,
+    app_server: AppServerSession,
+) -> Result<SessionSelection> {
+    let (bg_tx, bg_rx) = mpsc::unbounded_channel();
+    let is_remote = app_server.is_remote();
+    let cwd_filter = picker_cwd_filter(
+        config.cwd.as_path(),
+        show_all,
+        is_remote,
+        app_server.remote_cwd_override(),
+    );
+    run_session_picker_with_loader(
+        tui,
+        config,
+        show_all,
+        SessionPickerAction::Archive,
+        is_remote,
+        spawn_app_server_page_loader(
+            app_server,
+            cwd_filter,
+            /*include_non_interactive*/ false,
+            SessionPickerAction::Archive.archived_filter(),
+            bg_tx,
+        ),
+        bg_rx,
+    )
+    .await
+}
+
+pub async fn run_unarchive_picker_with_app_server(
+    tui: &mut Tui,
+    config: &Config,
+    show_all: bool,
+    app_server: AppServerSession,
+) -> Result<SessionSelection> {
+    let (bg_tx, bg_rx) = mpsc::unbounded_channel();
+    let is_remote = app_server.is_remote();
+    let cwd_filter = picker_cwd_filter(
+        config.cwd.as_path(),
+        show_all,
+        is_remote,
+        app_server.remote_cwd_override(),
+    );
+    run_session_picker_with_loader(
+        tui,
+        config,
+        show_all,
+        SessionPickerAction::Unarchive,
+        is_remote,
+        spawn_app_server_page_loader(
+            app_server,
+            cwd_filter,
+            /*include_non_interactive*/ false,
+            SessionPickerAction::Unarchive.archived_filter(),
+            bg_tx,
         ),
         bg_rx,
     )
@@ -288,6 +376,7 @@ fn spawn_app_server_page_loader(
     app_server: AppServerSession,
     cwd_filter: Option<PathBuf>,
     include_non_interactive: bool,
+    archived: bool,
     bg_tx: mpsc::UnboundedSender<BackgroundEvent>,
 ) -> PageLoader {
     let (request_tx, mut request_rx) = mpsc::unbounded_channel::<PageLoadRequest>();
@@ -303,6 +392,7 @@ fn spawn_app_server_page_loader(
                 request.provider_filter,
                 request.sort_key,
                 include_non_interactive,
+                archived,
             )
             .await;
             let _ = bg_tx.send(BackgroundEvent::PageLoaded {
@@ -416,6 +506,7 @@ async fn load_app_server_page(
     provider_filter: ProviderFilter,
     sort_key: ThreadSortKey,
     include_non_interactive: bool,
+    archived: bool,
 ) -> std::io::Result<PickerPage> {
     let response = app_server
         .thread_list(thread_list_params(
@@ -424,6 +515,7 @@ async fn load_app_server_page(
             provider_filter,
             sort_key,
             include_non_interactive,
+            archived,
         ))
         .await
         .map_err(std::io::Error::other)?;
@@ -1001,6 +1093,7 @@ fn thread_list_params(
     provider_filter: ProviderFilter,
     sort_key: ThreadSortKey,
     include_non_interactive: bool,
+    archived: bool,
 ) -> ThreadListParams {
     ThreadListParams {
         cursor,
@@ -1013,7 +1106,7 @@ fn thread_list_params(
         },
         source_kinds: (!include_non_interactive)
             .then_some(vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode]),
-        archived: Some(false),
+        archived: Some(archived),
         cwd: cwd_filter.map(|cwd| ThreadListCwdFilter::One(cwd.to_string_lossy().into_owned())),
         use_state_db_only: false,
         search_term: None,
@@ -1584,6 +1677,7 @@ mod tests {
             ProviderFilter::MatchDefault(String::from("openai")),
             ThreadSortKey::UpdatedAt,
             /*include_non_interactive*/ false,
+            /*archived*/ false,
         );
 
         assert_eq!(
@@ -1600,6 +1694,7 @@ mod tests {
             ProviderFilter::Any,
             ThreadSortKey::UpdatedAt,
             /*include_non_interactive*/ false,
+            /*archived*/ false,
         );
 
         assert_eq!(params.cursor, Some(String::from("cursor-1")));
@@ -1622,11 +1717,26 @@ mod tests {
             ProviderFilter::Any,
             ThreadSortKey::UpdatedAt,
             /*include_non_interactive*/ true,
+            /*archived*/ false,
         );
 
         assert_eq!(params.cursor, Some(String::from("cursor-1")));
         assert_eq!(params.model_providers, None);
         assert_eq!(params.source_kinds, None);
+    }
+
+    #[test]
+    fn archived_picker_thread_list_params_request_archived_threads() {
+        let params = thread_list_params(
+            Some(String::from("cursor-1")),
+            /*cwd_filter*/ None,
+            ProviderFilter::Any,
+            ThreadSortKey::UpdatedAt,
+            /*include_non_interactive*/ false,
+            /*archived*/ true,
+        );
+
+        assert_eq!(params.archived, Some(true));
     }
 
     #[test]

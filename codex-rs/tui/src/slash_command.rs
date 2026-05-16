@@ -33,6 +33,8 @@ pub enum SlashCommand {
     Rename,
     New,
     Resume,
+    Archive,
+    Unarchive,
     Fork,
     Init,
     Compact,
@@ -85,6 +87,8 @@ impl SlashCommand {
             SlashCommand::Review => "review my current changes and find issues",
             SlashCommand::Rename => "rename the current thread",
             SlashCommand::Resume => "resume a saved chat",
+            SlashCommand::Archive => "archive a saved chat",
+            SlashCommand::Unarchive => "restore an archived chat",
             SlashCommand::Clear => "clear the terminal and start a new chat",
             SlashCommand::Fork => "fork the current chat",
             SlashCommand::Quit | SlashCommand::Exit => "exit Codex",
@@ -156,6 +160,8 @@ impl SlashCommand {
                 | SlashCommand::Mcp
                 | SlashCommand::Side
                 | SlashCommand::Resume
+                | SlashCommand::Archive
+                | SlashCommand::Unarchive
                 | SlashCommand::SandboxReadRoot
         )
     }
@@ -177,6 +183,8 @@ impl SlashCommand {
         match self {
             SlashCommand::New
             | SlashCommand::Resume
+            | SlashCommand::Archive
+            | SlashCommand::Unarchive
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact

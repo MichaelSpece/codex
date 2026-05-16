@@ -532,6 +532,7 @@ fn session_target_from_app_server_thread(
 async fn lookup_session_target_by_name_with_app_server(
     app_server: &mut AppServerSession,
     name: &str,
+    archived: bool,
 ) -> color_eyre::Result<Option<resume_picker::SessionTarget>> {
     let mut cursor = None;
     loop {
@@ -543,7 +544,7 @@ async fn lookup_session_target_by_name_with_app_server(
                 sort_direction: None,
                 model_providers: None,
                 source_kinds: Some(vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode]),
-                archived: Some(false),
+                archived: Some(archived),
                 cwd: None,
                 use_state_db_only: false,
                 search_term: Some(name.to_string()),
@@ -566,6 +567,7 @@ async fn lookup_session_target_by_name_with_app_server(
 async fn lookup_session_target_with_app_server(
     app_server: &mut AppServerSession,
     id_or_name: &str,
+    archived: bool,
 ) -> color_eyre::Result<Option<resume_picker::SessionTarget>> {
     if Uuid::parse_str(id_or_name).is_ok() {
         let thread_id = match ThreadId::from_string(id_or_name) {
@@ -595,7 +597,7 @@ async fn lookup_session_target_with_app_server(
         };
     }
 
-    lookup_session_target_by_name_with_app_server(app_server, id_or_name).await
+    lookup_session_target_by_name_with_app_server(app_server, id_or_name, archived).await
 }
 
 async fn lookup_latest_session_target_with_app_server(
@@ -1223,7 +1225,13 @@ async fn run_ratatui_app(
             let Some(startup_app_server) = app_server.as_mut() else {
                 unreachable!("app server should be initialized for --fork <id>");
             };
-            match lookup_session_target_with_app_server(startup_app_server, id_str).await? {
+            match lookup_session_target_with_app_server(
+                startup_app_server,
+                id_str,
+                /*archived*/ false,
+            )
+            .await?
+            {
                 Some(target_session) => resume_picker::SessionSelection::Fork(target_session),
                 None => {
                     shutdown_app_server_if_present(app_server.take()).await;
@@ -1284,7 +1292,13 @@ async fn run_ratatui_app(
         let Some(startup_app_server) = app_server.as_mut() else {
             unreachable!("app server should be initialized for --resume <id>");
         };
-        match lookup_session_target_with_app_server(startup_app_server, id_str).await? {
+        match lookup_session_target_with_app_server(
+            startup_app_server,
+            id_str,
+            /*archived*/ false,
+        )
+        .await?
+        {
             Some(target_session) => resume_picker::SessionSelection::Resume(target_session),
             None => {
                 shutdown_app_server_if_present(app_server.take()).await;
@@ -2001,9 +2015,12 @@ mod tests {
                 AppServerSession::new(codex_app_server_client::AppServerClient::InProcess(
                     start_test_embedded_app_server(config).await?,
                 ));
-            let target =
-                lookup_session_target_by_name_with_app_server(&mut app_server, "saved-session")
-                    .await?;
+            let target = lookup_session_target_by_name_with_app_server(
+                &mut app_server,
+                "saved-session",
+                /*archived*/ false,
+            )
+            .await?;
             let target = target.expect("name lookup should find the saved thread");
             assert_eq!(target.path, Some(rollout_path));
             assert_eq!(target.thread_id, thread_id);

@@ -21,17 +21,11 @@ jobs:
     # Post-merge pushes to main also run the native Windows test job below,
     # which keeps V8/code-mode coverage without putting PR latency back on the
     # critical path.
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
-          # macOS
-          - os: macos-15-xlarge
-            target: aarch64-apple-darwin
-          - os: macos-15-xlarge
-            target: x86_64-apple-darwin
-
           # Linux
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
@@ -212,19 +206,17 @@ jobs:
           key: ${{ steps.prepare_bazel.outputs.repository-cache-key }}
 
   clippy:
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Keep Linux lint coverage on x64 and add the arm64 macOS path that
-          # the Bazel test job already exercises. Add Windows gnullvm as well
-          # so PRs get Bazel-native lint signal on the same Windows toolchain
-          # that the Bazel test job uses.
+          # Keep Linux lint coverage on x64 and add Windows gnullvm so PRs get
+          # Bazel-native lint signal on the same Windows toolchain that the
+          # Bazel test job uses. macos-15-xlarge is not available to community
+          # forks, so avoid scheduling it from this fork-safe workflow.
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-          - os: macos-15-xlarge
-            target: aarch64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-gnullvm
     runs-on: ${{ matrix.os }}
@@ -303,15 +295,13 @@ jobs:
           key: ${{ steps.prepare_bazel.outputs.repository-cache-key }}
 
   verify-release-build:
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-          - os: macos-15-xlarge
-            target: aarch64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-gnullvm
     runs-on: ${{ matrix.os }}

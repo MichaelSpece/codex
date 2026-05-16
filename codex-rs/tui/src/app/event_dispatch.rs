@@ -9,6 +9,57 @@ use super::*;
 const SHUTDOWN_FIRST_EXIT_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
 impl App {
+    async fn archive_target_session(
+        &mut self,
+        tui: &mut tui::Tui,
+        app_server: &mut AppServerSession,
+        target_session: SessionTarget,
+    ) -> Result<()> {
+        let label = target_session.display_label();
+        match app_server.archive_thread(target_session.thread_id).await {
+            Ok(()) => {
+                self.chat_widget
+                    .add_info_message(format!("Archived {label}."), /*hint*/ None);
+                if self.current_displayed_thread_id() == Some(target_session.thread_id) {
+                    self.start_fresh_session_with_summary_hint(
+                        tui, app_server, /*session_start_source*/ None,
+                        /*initial_user_message*/ None,
+                    )
+                    .await;
+                } else {
+                    tui.frame_requester().schedule_frame();
+                }
+            }
+            Err(err) => {
+                self.chat_widget
+                    .add_error_message(format!("Failed to archive {label}: {err}"));
+                tui.frame_requester().schedule_frame();
+            }
+        }
+        Ok(())
+    }
+
+    async fn unarchive_target_session(
+        &mut self,
+        tui: &mut tui::Tui,
+        app_server: &mut AppServerSession,
+        target_session: SessionTarget,
+    ) -> Result<()> {
+        let label = target_session.display_label();
+        match app_server.unarchive_thread(target_session.thread_id).await {
+            Ok(_) => {
+                self.chat_widget
+                    .add_info_message(format!("Unarchived {label}."), /*hint*/ None);
+            }
+            Err(err) => {
+                self.chat_widget
+                    .add_error_message(format!("Failed to unarchive {label}: {err}"));
+            }
+        }
+        tui.frame_requester().schedule_frame();
+        Ok(())
+    }
+
     pub(super) async fn handle_event(
         &mut self,
         tui: &mut tui::Tui,
@@ -95,6 +146,8 @@ impl App {
                     }
                     SessionSelection::Exit
                     | SessionSelection::StartFresh
+                    | SessionSelection::Archive(_)
+                    | SessionSelection::Unarchive(_)
                     | SessionSelection::Fork(_) => {}
                 }
 
@@ -102,7 +155,13 @@ impl App {
                 tui.frame_requester().schedule_frame();
             }
             AppEvent::ResumeSessionByIdOrName(id_or_name) => {
-                match crate::lookup_session_target_with_app_server(app_server, &id_or_name).await? {
+                match crate::lookup_session_target_with_app_server(
+                    app_server,
+                    &id_or_name,
+                    /*archived*/ false,
+                )
+                .await?
+                {
                     Some(target_session) => {
                         return self
                             .resume_target_session(tui, app_server, target_session)
@@ -111,6 +170,130 @@ impl App {
                     None => {
                         self.chat_widget.add_error_message(format!(
                             "No saved chat found matching '{id_or_name}'."
+                        ));
+                    }
+                }
+            }
+            AppEvent::OpenArchivePicker => {
+                let picker_app_server = match crate::start_app_server_for_picker(
+                    &self.config,
+                    &match self.remote_app_server_url.clone() {
+                        Some(websocket_url) => crate::AppServerTarget::Remote {
+                            websocket_url,
+                            auth_token: self.remote_app_server_auth_token.clone(),
+                        },
+                        None => crate::AppServerTarget::Embedded,
+                    },
+                    self.environment_manager.clone(),
+                )
+                .await
+                {
+                    Ok(app_server) => app_server,
+                    Err(err) => {
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to start TUI archive picker: {err}"
+                        ));
+                        return Ok(AppRunControl::Continue);
+                    }
+                };
+                match crate::resume_picker::run_archive_picker_with_app_server(
+                    tui,
+                    &self.config,
+                    /*show_all*/ false,
+                    picker_app_server,
+                )
+                .await?
+                {
+                    SessionSelection::Archive(target_session) => {
+                        self.archive_target_session(tui, app_server, target_session)
+                            .await?;
+                    }
+                    SessionSelection::Exit
+                    | SessionSelection::StartFresh
+                    | SessionSelection::Resume(_)
+                    | SessionSelection::Unarchive(_)
+                    | SessionSelection::Fork(_) => {}
+                }
+
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::ArchiveSessionByIdOrName(id_or_name) => {
+                match crate::lookup_session_target_with_app_server(
+                    app_server,
+                    &id_or_name,
+                    /*archived*/ false,
+                )
+                .await?
+                {
+                    Some(target_session) => {
+                        self.archive_target_session(tui, app_server, target_session)
+                            .await?;
+                    }
+                    None => {
+                        self.chat_widget.add_error_message(format!(
+                            "No active saved chat found matching '{id_or_name}'."
+                        ));
+                    }
+                }
+            }
+            AppEvent::OpenUnarchivePicker => {
+                let picker_app_server = match crate::start_app_server_for_picker(
+                    &self.config,
+                    &match self.remote_app_server_url.clone() {
+                        Some(websocket_url) => crate::AppServerTarget::Remote {
+                            websocket_url,
+                            auth_token: self.remote_app_server_auth_token.clone(),
+                        },
+                        None => crate::AppServerTarget::Embedded,
+                    },
+                    self.environment_manager.clone(),
+                )
+                .await
+                {
+                    Ok(app_server) => app_server,
+                    Err(err) => {
+                        self.chat_widget.add_error_message(format!(
+                            "Failed to start TUI unarchive picker: {err}"
+                        ));
+                        return Ok(AppRunControl::Continue);
+                    }
+                };
+                match crate::resume_picker::run_unarchive_picker_with_app_server(
+                    tui,
+                    &self.config,
+                    /*show_all*/ false,
+                    picker_app_server,
+                )
+                .await?
+                {
+                    SessionSelection::Unarchive(target_session) => {
+                        self.unarchive_target_session(tui, app_server, target_session)
+                            .await?;
+                    }
+                    SessionSelection::Exit
+                    | SessionSelection::StartFresh
+                    | SessionSelection::Resume(_)
+                    | SessionSelection::Archive(_)
+                    | SessionSelection::Fork(_) => {}
+                }
+
+                tui.frame_requester().schedule_frame();
+            }
+            AppEvent::UnarchiveSessionByIdOrName(id_or_name) => {
+                match crate::lookup_session_target_with_app_server(
+                    app_server,
+                    &id_or_name,
+                    /*archived*/ true,
+                )
+                .await?
+                {
+                    Some(target_session) => {
+                        self.unarchive_target_session(tui, app_server, target_session)
+                            .await?;
+                    }
+                    None => {
+                        self.chat_widget.add_error_message(format!(
+                            "No archived chat found matching '{id_or_name}'."
                         ));
                     }
                 }
